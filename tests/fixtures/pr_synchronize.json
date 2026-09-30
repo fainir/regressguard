@@ -1,0 +1,111 @@
+{
+  "action": "synchronize",
+  "number": 42,
+  "before": "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
+  "after": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3",
+  "pull_request": {
+    "url": "https://api.github.com/repos/glasshouse-labs/regressguard-test/pulls/42",
+    "id": 1502938471,
+    "node_id": "PR_kwDOA1b2c3M4NTAyOTM4NDcx",
+    "html_url": "https://github.com/glasshouse-labs/regressguard-test/pull/42",
+    "diff_url": "https://github.com/glasshouse-labs/regressguard-test/pull/42.diff",
+    "patch_url": "https://github.com/glasshouse-labs/regressguard-test/pull/42.patch",
+    "issue_url": "https://api.github.com/repos/glasshouse-labs/regressguard-test/issues/42",
+    "number": 42,
+    "state": "open",
+    "locked": false,
+    "title": "Tighten summarization prompt to preserve entity names",
+    "user": {
+      "login": "fainir",
+      "id": 8172645,
+      "node_id": "MDQ6VXNlcjgxNzI2NDU=",
+      "type": "User",
+      "site_admin": false
+    },
+    "body": "Adds a rule to the system prompt so entity names are preserved verbatim. Fixes a regression flagged by the eval suite.",
+    "created_at": "2026-07-11T18:14:22Z",
+    "updated_at": "2026-07-11T18:41:07Z",
+    "closed_at": null,
+    "merged_at": null,
+    "merge_commit_sha": null,
+    "assignee": null,
+    "assignees": [],
+    "requested_reviewers": [],
+    "requested_teams": [],
+    "labels": [],
+    "milestone": null,
+    "draft": false,
+    "head": {
+      "label": "fainir:tighten-summarization-prompt",
+      "ref": "tighten-summarization-prompt",
+      "sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3",
+      "user": {
+        "login": "fainir",
+        "id": 8172645,
+        "type": "User"
+      },
+      "repo": {
+        "id": 56789012,
+        "name": "regressguard-test",
+        "full_name": "glasshouse-labs/regressguard-test",
+        "private": false
+      }
+    },
+    "base": {
+      "label": "glasshouse-labs:main",
+      "ref": "main",
+      "sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+      "user": {
+        "login": "glasshouse-labs",
+        "id": 34567890,
+        "type": "Organization"
+      },
+      "repo": {
+        "id": 56789012,
+        "name": "regressguard-test",
+        "full_name": "glasshouse-labs/regressguard-test",
+        "private": false
+      }
+    },
+    "author_association": "OWNER",
+    "auto_merge": null,
+    "active_lock_reason": null,
+    "merged": false,
+    "mergeable": true,
+    "rebaseable": true,
+    "mergeable_state": "clean",
+    "comments": 1,
+    "review_comments": 0,
+    "maintainer_can_modify": false,
+    "commits": 2,
+    "additions": 6,
+    "deletions": 1,
+    "changed_files": 1
+  },
+  "repository": {
+    "id": 56789012,
+    "node_id": "R_kgDOA1b2c3",
+    "name": "regressguard-test",
+    "full_name": "glasshouse-labs/regressguard-test",
+    "private": false,
+    "owner": {
+      "login": "glasshouse-labs",
+      "id": 34567890,
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/glasshouse-labs/regressguard-test",
+    "description": "Test repo for RegressGuard GitHub App webhook wiring.",
+    "fork": false,
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "fainir",
+    "id": 8172645,
+    "type": "User",
+    "site_admin": false
+  },
+  "installation": {
+    "id": 90123456,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uOTAxMjM0NTY="
+  }
+}
