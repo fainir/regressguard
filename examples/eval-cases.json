@@ -1,0 +1,40 @@
+{
+  "version": "0",
+  "description": "Example RegressGuard eval cases covering all 4 assertion types. Schema: .agent/eval-schema.md",
+  "cases": [
+    {
+      "input": "Return only the string 'ok' with no punctuation or whitespace.",
+      "expected": "ok",
+      "assertions": [
+        { "type": "exact", "value": "ok" }
+      ]
+    },
+    {
+      "input": "Explain briefly why parameterized SQL queries prevent injection.",
+      "expected": "A short explanation mentioning that parameters are sent separately from the SQL text.",
+      "assertions": [
+        { "type": "contains", "value": "parameter" },
+        { "type": "contains", "value": "SQL" }
+      ]
+    },
+    {
+      "input": "Give me a US phone number in the format 555-123-4567.",
+      "expected": "A string matching the North American 3-3-4 hyphenated format.",
+      "assertions": [
+        { "type": "regex", "value": "\\b\\d{3}-\\d{3}-\\d{4}\\b" }
+      ]
+    },
+    {
+      "input": "Summarize the plot of Hamlet in one paragraph.",
+      "expected": "A short prose summary mentioning Hamlet, Claudius, and revenge.",
+      "assertions": [
+        { "type": "contains", "value": "Hamlet" },
+        {
+          "type": "llm-judge",
+          "value": "factual-summary",
+          "judge_prompt": "You are grading a summary of Shakespeare's Hamlet. Response:\n{{response}}\n\nOn the first line, output PASS if the summary is factually accurate about the plot (mentions Claudius, revenge, and Hamlet's father's death) and reads as a coherent paragraph. Otherwise output FAIL. Then, on a second line, give a one-sentence reason."
+        }
+      ]
+    }
+  ]
+}
