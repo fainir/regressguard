@@ -1,0 +1,5 @@
+{
+  "Return only the string 'ok' with no punctuation or whitespace.": "ok",
+  "Explain briefly why parameterized SQL queries prevent injection.": "Parameterized SQL queries prevent SQL injection because parameters are sent separately from the SQL text.",
+  "Give me a US phone number in the format 555-123-4567.": "555-867-5309"
+}
