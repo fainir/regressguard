@@ -1,0 +1,7 @@
+{
+  "Return only the string 'ok' with no punctuation or whitespace.": "ok",
+  "Explain briefly why parameterized SQL queries prevent injection.": "Parameterized SQL queries prevent SQL injection because parameters are sent separately from the SQL text.",
+  "Give me a US phone number in the format 555-123-4567.": "555-867-5309",
+  "Summarize the plot of Hamlet in one paragraph.": "Hamlet is a tragedy by Shakespeare. Hamlet's father, the King of Denmark, is murdered by his brother Claudius, who takes the throne and marries the widowed queen. The ghost of Hamlet's father commands him to take revenge, which he pursues through most of the play, ultimately dying in the attempt.",
+  "You are grading a summary of Shakespeare's Hamlet. Response:\nHamlet is a tragedy by Shakespeare. Hamlet's father, the King of Denmark, is murdered by his brother Claudius, who takes the throne and marries the widowed queen. The ghost of Hamlet's father commands him to take revenge, which he pursues through most of the play, ultimately dying in the attempt.\n\nOn the first line, output PASS if the summary is factually accurate about the plot (mentions Claudius, revenge, and Hamlet's father's death) and reads as a coherent paragraph. Otherwise output FAIL. Then, on a second line, give a one-sentence reason.": "PASS\nMentions Claudius, revenge, and Hamlet's father's death in a coherent paragraph."
+}
