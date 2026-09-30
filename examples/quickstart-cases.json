@@ -1,0 +1,28 @@
+{
+  "version": "0",
+  "description": "Minimal RegressGuard Quickstart case set. One case per assertion type (exact, contains, regex). Runs against the bundled `stub` provider so no API key is required. Full schema: .agent/eval-schema.md",
+  "cases": [
+    {
+      "input": "Return only the string 'ok' with no punctuation or whitespace.",
+      "expected": "ok",
+      "assertions": [
+        { "type": "exact", "value": "ok" }
+      ]
+    },
+    {
+      "input": "Explain briefly why parameterized SQL queries prevent injection.",
+      "expected": "A short explanation mentioning that parameters are sent separately from the SQL text.",
+      "assertions": [
+        { "type": "contains", "value": "parameter" },
+        { "type": "contains", "value": "SQL" }
+      ]
+    },
+    {
+      "input": "Give me a US phone number in the format 555-123-4567.",
+      "expected": "A string matching the North American 3-3-4 hyphenated format.",
+      "assertions": [
+        { "type": "regex", "value": "\\b\\d{3}-\\d{3}-\\d{4}\\b" }
+      ]
+    }
+  ]
+}
