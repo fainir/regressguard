@@ -130,3 +130,7 @@ python -m pytest tests/ -v
 ```
 
 Expected: 39 passed.
+
+## Blog
+
+Short, hands-on posts about shipping prompt-regression testing live under [`docs/blog/`](docs/blog/). The index at [`docs/blog/README.md`](docs/blog/README.md) links each post with a one-line summary; start there if you want the series. Current posts cover: why prompt regression testing matters, running RegressGuard in a GitHub Actions pull-request check, and a runnable walkthrough of five assertion patterns (exact / regex / JSON-shape / semantic / LLM-judge).
