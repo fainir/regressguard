@@ -34,11 +34,11 @@ The runner is what makes this a regression test instead of a one-off evaluation.
 
 ## Where RegressGuard fits
 
-RegressGuard is a small, opinionated eval runner designed to be the piece between your prompt file and your CI pipeline. You point it at a directory of input files, a prompt template, and a set of assertions. It runs the prompt against each input, scores the output, writes the results, and exits non-zero if a tracked case regresses against the last green baseline.
+RegressGuard is a small, opinionated eval runner designed to be the piece between your prompt file and your CI pipeline. You point it at a prompt template and a case file: a list of inputs, each with the assertions its output must satisfy. It runs the prompt against each input, checks the output, writes a JSON report, and exits non-zero if any case fails.
 
-It is deliberately not a model playground, a prompt IDE, or a dashboard company. It is a CLI you can drop into an existing GitHub Actions workflow in under five minutes. The scoring layer supports exact-match, regex-contains, JSON-shape validation, semantic-similarity stubs, and rubric-driven LLM-as-judge out of the box - the five patterns most teams actually need. New assertion types are a single Python class.
+It is deliberately not a model playground, a prompt IDE, or a dashboard company. It is a CLI you can drop into an existing GitHub Actions workflow in under five minutes. The built-in checks are exact-match, substring, regex, and rubric-driven LLM-as-judge. JSON-shape validation and semantic similarity, the other two of the five patterns most teams actually need, are not built in yet; the third post in this series covers all five. Adding an assertion type is a small change to one module.
 
-The workflow we design for is: a developer edits a prompt, pushes a branch, the regression suite runs in CI against the pinned eval corpus, and the PR cannot merge if any tracked case drops. The baseline is a committed artifact in the repo, so you get the same diff-review ergonomics for prompt behavior that you already have for code behavior.
+The workflow we design for is: a developer edits a prompt, pushes a branch, the regression suite runs in CI against the pinned eval corpus, and the PR cannot merge if any case fails. The case file is committed next to the prompt, so you get the same diff-review ergonomics for prompt behavior that you already have for code behavior.
 
 ## What to do this week
 

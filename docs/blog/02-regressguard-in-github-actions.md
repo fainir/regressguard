@@ -2,7 +2,7 @@
 
 The first post in this series argued that prompts need regression tests. This one makes that argument executable. In about ten minutes you can wire a GitHub Actions workflow that runs your prompt evals on every pull request, prints a human-readable pass or fail, and refuses to merge when a prompt regresses.
 
-Nothing in here is specific to RegressGuard. The same shape works with any eval runner you prefer. We use RegressGuard because it emits a non-zero exit code on failure and writes a short Markdown summary - two features that make CI integration cheap.
+Nothing in here is specific to RegressGuard. The same shape works with any eval runner you prefer. We use RegressGuard because it emits a non-zero exit code on failure and writes a JSON report you can keep as a build artifact - two features that make CI integration cheap.
 
 ## The workflow
 
@@ -26,7 +26,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -36,16 +35,17 @@ jobs:
           python-version: "3.12"
 
       - name: Install RegressGuard
-        run: pip install regressguard==0.3.*
+        run: pip install "regressguard[anthropic] @ git+https://github.com/fainir/regressguard"
 
       - name: Run evals
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          regressguard run evals/ \
-            --baseline main \
-            --report-md $GITHUB_STEP_SUMMARY \
-            --json-out eval-report.json
+          regressguard \
+            --prompt "$(cat prompts/summarize.md)" \
+            --cases evals/summarize.json \
+            --provider anthropic \
+            --out eval-report.json
 
       - name: Upload report
         if: always()
@@ -53,36 +53,26 @@ jobs:
         with:
           name: eval-report
           path: eval-report.json
-
-      - name: Comment on PR
-        if: github.event_name == 'pull_request' && always()
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: regressguard
-          path: $GITHUB_STEP_SUMMARY
 ```
 
-Four things worth noticing. First, the `paths` filter means the workflow only runs when prompts, evals, or the workflow itself change - no wasted minutes when a developer edits unrelated code. Second, the API key lives in `secrets.ANTHROPIC_API_KEY` so you can rotate it without touching the repo. Third, the report goes to `$GITHUB_STEP_SUMMARY`, which shows up directly in the Actions UI. Fourth, the sticky PR comment overwrites itself on every run, so the PR conversation does not fill up with duplicate reports.
+Three things worth noticing. First, the `paths` filter means the workflow only runs when prompts, evals, or the workflow itself change - no wasted minutes when a developer edits unrelated code. Second, the API key lives in `secrets.ANTHROPIC_API_KEY` so you can rotate it without touching the repo. Third, the report upload runs with `if: always()`, so the full JSON report (every response and every check) is attached to failed runs, which are the ones you want to read.
+
+RegressGuard is not on PyPI, so the install step pulls it from GitHub. Pin a commit (`...regressguard@<sha>`) once you have a setup you trust. One `regressguard` call runs one prompt template against one case file; if you have several prompts, add one step per prompt.
 
 ## Reading the output
 
-When the job finishes, open the Actions tab and expand the "Run evals" step. You will see something like this.
+When the job finishes, open the Actions tab and expand the "Run evals" step. A run where a prompt change broke two of three cases looks like this:
 
 ```
-RegressGuard 0.3.1
-Loaded 12 evals from evals/
-Baseline: main @ 7a1b2c3
-
-PASS  evals/intent-classifier.yml       12/12
-FAIL  evals/summarizer.yml               9/10  (regressed vs baseline)
-PASS  evals/entity-extractor.yml         8/8
-
-1 regression, 29/30 cases passed.
+FAIL case 1 ("Return only the string 'ok' with no punctuation or whites..."): expected 'ok', got 'OK.'
+FAIL case 3 ('Give me a US phone number in the format 555-123-4567.'): regex /\b\d{3}-\d{3}-\d{4}\b/ did not match
+regressguard: 1 passed, 2 failed
+Error: Process completed with exit code 1.
 ```
 
-The counts are per case, not per file. The `(regressed vs baseline)` tag means that at least one case in that eval file passed on `main` but fails on the pull request's commit. That is the signal you care about. A case that fails in both branches is a known-broken case, not a regression - RegressGuard still reports it but does not block the merge.
+Each failing case gets one line: its position in the case file, the start of its input, and the check that failed. The full responses are in the uploaded `eval-report.json`. That is the signal you care about: a specific case, a specific check, and what the model said instead.
 
-The exit code is 0 only when there are zero regressions. New failures that are also baseline failures do not fail the job. New failures introduced by the change do.
+The exit code is 0 only when every case passes and 1 when any case fails or its model call errors. A broken setup - a missing case file, a typo in an assertion, an unknown provider - exits 2 before any model call, so a misconfigured job fails loudly instead of passing with nothing checked.
 
 ## Gating merges
 
@@ -95,13 +85,13 @@ To make the check binding, add a required status check in your branch protection
 
 From that point forward, a pull request that regresses any eval is simply not mergeable. The author gets a specific reason, pinned to specific cases, instead of a vague review comment two days later. If you want to allow override, use GitHub's "Bypass who can push to matching branches" setting rather than disabling the check - that way the override is auditable.
 
-For teams that are not ready to hard-gate, keep the workflow as "advisory" by not adding it to required checks. The PR comment still appears; it just does not block.
+For teams that are not ready to hard-gate, keep the workflow as "advisory" by not adding it to required checks. The check still runs and shows its result on the PR; it just does not block.
 
-## Baselines and flakes
+## Known-broken cases and flakes
 
-The baseline flag `--baseline main` tells RegressGuard to compare the current run against the most recent run on `main`. If `main` has never been evaluated, the first run creates the baseline and no regressions can be reported. This means your first CI run is always green, which is the correct behavior - you have nothing to regress against yet.
+RegressGuard does not compare against a baseline run: every case in the file must pass. That keeps the rule simple - the case file on `main` is the baseline, and it should be green. If a case is known broken, fix the prompt or move the case out of the file until you do. A check that is always red teaches people to ignore it.
 
-A common early frustration is prompt flakes: a case that passes nineteen times and fails on the twentieth. RegressGuard handles this with a `samples` field in the eval definition that reruns a case N times and takes the majority vote. Three samples is usually enough to cut flake noise by an order of magnitude without tripling your API bill. Set it per-case rather than globally so stable cases stay cheap.
+A common early frustration is prompt flakes: a case that passes nineteen times and fails on the twentieth. RegressGuard does not rerun cases or take a majority vote, so the defense is in how you write cases. Check the parts of the output that must be stable with `exact`, `contains`, and `regex`, keep `llm-judge` rubrics strict and specific, and when a case still flaps, ask whether it checks something the prompt does not actually pin down.
 
 ## What to do this week
 
