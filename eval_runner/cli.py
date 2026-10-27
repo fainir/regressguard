@@ -133,7 +133,7 @@ def summarize(report: dict[str, Any]) -> str:
         if "error" in case:
             reason = case["error"]
         else:
-            reason = "; ".join(f"{a['type']}: {a['detail']}" for a in case["assertions"] if not a["passed"])
+            reason = "; ".join(a["detail"] for a in case["assertions"] if not a["passed"])
         snippet = case["input"] if len(case["input"]) <= 60 else case["input"][:57] + "..."
         lines.append(f"FAIL case {n} ({snippet!r}): {reason}")
     lines.append(f"regressguard: {report['pass']} passed, {report['fail']} failed")

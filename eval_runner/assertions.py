@@ -72,8 +72,12 @@ def run_assertion(
     value = assertion["value"]
 
     if a_type == "exact":
-        passed = response.strip() == value.strip()
-        return AssertionResult(passed, f"exact match ({passed})")
+        if response.strip() == value.strip():
+            return AssertionResult(True, "exact match")
+        got = response.strip()
+        if len(got) > 80:
+            got = got[:77] + "..."
+        return AssertionResult(False, f"expected {value.strip()!r}, got {got!r}")
 
     if a_type == "contains":
         passed = value in response
@@ -83,7 +87,7 @@ def run_assertion(
         match = re.search(value, response)
         if match:
             return AssertionResult(True, f"regex matched: {match.group(0)!r}")
-        return AssertionResult(False, f"regex {value!r} did not match")
+        return AssertionResult(False, f"regex /{value}/ did not match")
 
     # llm-judge
     fn = judge_fn or _stub_judge

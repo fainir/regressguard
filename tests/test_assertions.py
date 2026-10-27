@@ -13,6 +13,7 @@ class TestExact:
     def test_fail_on_mismatch(self):
         result = run_assertion({"type": "exact", "value": "ok"}, "okay")
         assert result.passed is False
+        assert result.detail == "expected 'ok', got 'okay'"
 
 
 class TestContains:
