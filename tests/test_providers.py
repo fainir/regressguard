@@ -81,7 +81,7 @@ def test_openai_requires_model():
 
 def test_missing_sdk_gives_install_hint(monkeypatch):
     monkeypatch.setitem(sys.modules, "anthropic", None)  # makes `import anthropic` raise ImportError
-    with pytest.raises(RuntimeError, match=r"pip install"):
+    with pytest.raises(RuntimeError, match=r"pip install anthropic"):
         build_provider("anthropic", None)
 
 

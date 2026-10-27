@@ -27,7 +27,7 @@ def server(tmp_path, monkeypatch):
     monkeypatch.setenv("REGRESSGUARD_DB", str(tmp_path / "runs.db"))
     httpd = make_server("127.0.0.1", 0)
     port = httpd.server_address[1]
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
     thread.start()
     try:
         yield f"http://127.0.0.1:{port}"

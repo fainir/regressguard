@@ -1,11 +1,15 @@
 """End-to-end CLI wiring via the stub provider. Covers happy path + a failing case."""
 
+import contextlib
+import io
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from eval_runner.cli import main
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -19,6 +23,18 @@ def _run(args: list[str]) -> tuple[int, str, str]:
         cwd=REPO,
     )
     return result.returncode, result.stdout, result.stderr
+
+
+def _main(args: list[str], monkeypatch) -> tuple[int, str, str]:
+    """In-process variant of _run: same contract, much faster than spawning Python."""
+    monkeypatch.chdir(REPO)
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = main(args)
+        except SystemExit as exc:  # argparse exits for --version and usage errors
+            code = exc.code
+    return code, out.getvalue(), err.getvalue()
 
 
 def test_all_pass_against_stub(tmp_path):
@@ -90,28 +106,30 @@ def _write_stub(tmp_path, responses) -> str:
     return str(path)
 
 
-def test_quickstart_example_passes():
-    code, stdout, stderr = _run(
+def test_quickstart_example_passes(monkeypatch):
+    code, stdout, stderr = _main(
         [
             "--prompt", "{{input}}",
             "--cases", "examples/quickstart-cases.json",
             "--provider", "stub",
             "--stub-responses", "examples/quickstart-stub-responses.json",
-        ]
+        ],
+        monkeypatch,
     )
     assert code == 0, stderr
     report = json.loads(stdout)
     assert (report["pass"], report["fail"]) == (3, 0)
 
 
-def test_summary_line_goes_to_stderr_and_stdout_stays_json(tmp_path):
+def test_summary_line_goes_to_stderr_and_stdout_stays_json(tmp_path, monkeypatch):
     cases = _write_cases(tmp_path, [
         {"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]},
         {"input": "say bye", "assertions": [{"type": "exact", "value": "goodbye"}]},
     ])
     stub = _write_stub(tmp_path, {"say hi": "hello", "say bye": "later"})
-    code, stdout, stderr = _run(
-        ["--prompt", "{{input}}", "--cases", cases, "--provider", "stub", "--stub-responses", stub]
+    code, stdout, stderr = _main(
+        ["--prompt", "{{input}}", "--cases", cases, "--provider", "stub", "--stub-responses", stub],
+        monkeypatch,
     )
     assert code == 1
     json.loads(stdout)  # stdout is still a parseable report
@@ -119,12 +137,13 @@ def test_summary_line_goes_to_stderr_and_stdout_stays_json(tmp_path):
     assert "say bye" in stderr
 
 
-def test_case_without_assertions_is_a_config_error_not_a_pass(tmp_path):
+def test_case_without_assertions_is_a_config_error_not_a_pass(tmp_path, monkeypatch):
     # A typo like "assertion" used to make the case pass with zero checks.
     cases = _write_cases(tmp_path, [{"input": "say hi", "assertion": [{"type": "exact", "value": "x"}]}])
     stub = _write_stub(tmp_path, {"say hi": "hello"})
-    code, stdout, stderr = _run(
-        ["--prompt", "{{input}}", "--cases", cases, "--provider", "stub", "--stub-responses", stub]
+    code, stdout, stderr = _main(
+        ["--prompt", "{{input}}", "--cases", cases, "--provider", "stub", "--stub-responses", stub],
+        monkeypatch,
     )
     assert code == 2
     assert stdout == ""
@@ -143,48 +162,52 @@ def test_case_without_assertions_is_a_config_error_not_a_pass(tmp_path):
         ([{"input": "a", "assertions": [{"type": "llm-judge", "value": "x"}]}], "judge_prompt"),
     ],
 )
-def test_invalid_case_file_exits_2_with_message(tmp_path, cases, needle):
+def test_invalid_case_file_exits_2_with_message(tmp_path, monkeypatch, cases, needle):
     path = _write_cases(tmp_path, cases)
     stub = _write_stub(tmp_path, {"a": "a"})
-    code, _stdout, stderr = _run(
-        ["--prompt", "{{input}}", "--cases", path, "--provider", "stub", "--stub-responses", stub]
+    code, _stdout, stderr = _main(
+        ["--prompt", "{{input}}", "--cases", path, "--provider", "stub", "--stub-responses", stub],
+        monkeypatch,
     )
     assert code == 2, stderr
     assert needle in stderr
     assert "Traceback" not in stderr
 
 
-def test_missing_cases_file_exits_2(tmp_path):
+def test_missing_cases_file_exits_2(tmp_path, monkeypatch):
     stub = _write_stub(tmp_path, {})
-    code, _stdout, stderr = _run(
-        ["--prompt", "{{input}}", "--cases", str(tmp_path / "nope.json"), "--provider", "stub", "--stub-responses", stub]
+    code, _stdout, stderr = _main(
+        ["--prompt", "{{input}}", "--cases", str(tmp_path / "nope.json"), "--provider", "stub", "--stub-responses", stub],
+        monkeypatch,
     )
     assert code == 2
     assert "nope.json" in stderr
     assert "Traceback" not in stderr
 
 
-def test_malformed_cases_json_exits_2(tmp_path):
+def test_malformed_cases_json_exits_2(tmp_path, monkeypatch):
     path = tmp_path / "cases.json"
     path.write_text("{ not json")
     stub = _write_stub(tmp_path, {})
-    code, _stdout, stderr = _run(
-        ["--prompt", "{{input}}", "--cases", str(path), "--provider", "stub", "--stub-responses", stub]
+    code, _stdout, stderr = _main(
+        ["--prompt", "{{input}}", "--cases", str(path), "--provider", "stub", "--stub-responses", stub],
+        monkeypatch,
     )
     assert code == 2
     assert "not valid JSON" in stderr
 
 
-def test_openai_without_model_exits_2():
+def test_openai_without_model_exits_2(monkeypatch):
     # Used to silently send the Claude default model id to OpenAI.
-    code, _stdout, stderr = _run(
-        ["--prompt", "{{input}}", "--cases", "examples/quickstart-cases.json", "--provider", "openai"]
+    code, _stdout, stderr = _main(
+        ["--prompt", "{{input}}", "--cases", "examples/quickstart-cases.json", "--provider", "openai"],
+        monkeypatch,
     )
     assert code == 2
     assert "--model" in stderr
 
 
-def test_version_flag():
-    code, stdout, _stderr = _run(["--version"])
+def test_version_flag(monkeypatch):
+    code, stdout, _stderr = _main(["--version"], monkeypatch)
     assert code == 0
     assert stdout.startswith("regressguard ")

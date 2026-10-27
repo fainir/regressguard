@@ -50,7 +50,7 @@ def _import_sdk(name: str):
         return importlib.import_module(name)
     except ImportError:
         raise RuntimeError(
-            f"--provider {name} needs the {name} SDK: pip install 'regressguard[{name}]' (or pip install {name})"
+            f"--provider {name} needs the {name} SDK: pip install {name}"
         ) from None
 
 
