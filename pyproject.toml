@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "regressguard"
+dynamic = ["version"]
+description = "Self-hosted CI eval harness for prompt regression testing: run a case file against an LLM, fail the build when a case regresses."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Nir Feinstein" }]
+keywords = [
+    "llm",
+    "evals",
+    "prompt-testing",
+    "prompt-engineering",
+    "regression-testing",
+    "ci",
+    "github-actions",
+    "llmops",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
+# The core CLI is stdlib-only; provider SDKs are optional extras.
+dependencies = []
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40,<3"]
+openai = ["openai>=1.40,<4"]
+all = ["anthropic>=0.40,<3", "openai>=1.40,<4"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+regressguard = "eval_runner.cli:main"
+regressguard-server = "eval_runner.server:main"
+
+[project.urls]
+Homepage = "https://github.com/fainir/regressguard"
+Repository = "https://github.com/fainir/regressguard"
+Issues = "https://github.com/fainir/regressguard/issues"
+Changelog = "https://github.com/fainir/regressguard/blob/main/CHANGELOG.md"
+
+[tool.setuptools.dynamic]
+version = { attr = "eval_runner.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["eval_runner*"]
+
+[tool.setuptools.package-data]
+eval_runner = ["webui/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
