@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import json
 import os
+import http.client
 import threading
 import urllib.error
 import urllib.request
-from http.server import HTTPServer
 from pathlib import Path
 
 import pytest
 
-from eval_runner.server import EvalHandler, handle_run
+from eval_runner import server as server_module
+from eval_runner.server import MAX_BODY_BYTES, handle_run, make_server
 from eval_runner.store import RunsStore
 
 
@@ -21,10 +22,10 @@ REPO = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def server(tmp_path, monkeypatch):
-    # Isolate persistence to a per-test tmp DB so the real .agent/regressguard.db
+    # Isolate persistence to a per-test tmp DB so a real regressguard.db
     # is never touched by the suite.
     monkeypatch.setenv("REGRESSGUARD_DB", str(tmp_path / "runs.db"))
-    httpd = HTTPServer(("127.0.0.1", 0), EvalHandler)
+    httpd = make_server("127.0.0.1", 0)
     port = httpd.server_address[1]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -50,14 +51,12 @@ def _post(url: str, body: bytes | str, content_type: str = "application/json", h
         return exc.code, json.loads(exc.read().decode("utf-8"))
 
 
-def test_happy_path_stub(server, tmp_path):
-    stub_path = tmp_path / "stub.json"
-    stub_path.write_text(json.dumps({"say hi": "hello"}))
+def test_happy_path_stub(server):
     body = {
         "prompt": "{{input}}",
         "cases": [{"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}],
         "provider": "stub",
-        "stub_responses": str(stub_path),
+        "stub_responses_inline": {"say hi": "hello"},
     }
     status, report = _post(f"{server}/run", json.dumps(body))
     assert status == 200
@@ -80,9 +79,7 @@ def test_missing_field_returns_400(server):
     assert "provider" in resp["error"]
 
 
-def test_all_fail_suite_shape(server, tmp_path):
-    stub_path = tmp_path / "stub.json"
-    stub_path.write_text(json.dumps({"say hi": "hello", "say bye": "later"}))
+def test_all_fail_suite_shape(server):
     body = {
         "prompt": "{{input}}",
         "cases": [
@@ -90,7 +87,7 @@ def test_all_fail_suite_shape(server, tmp_path):
             {"input": "say bye", "assertions": [{"type": "exact", "value": "goodbye"}]},
         ],
         "provider": "stub",
-        "stub_responses": str(stub_path),
+        "stub_responses_inline": {"say hi": "hello", "say bye": "later"},
     }
     status, report = _post(f"{server}/run", json.dumps(body))
     assert status == 200
@@ -158,14 +155,12 @@ def test_stub_inline_responses_happy_path(server):
     assert report["fail"] == 0
 
 
-def test_post_run_persists_row_to_store(server, tmp_path, monkeypatch):
-    stub_path = tmp_path / "stub.json"
-    stub_path.write_text(json.dumps({"say hi": "hello"}))
+def test_post_run_persists_row_to_store(server):
     body = {
         "prompt": "{{input}}",
         "cases": [{"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}],
         "provider": "stub",
-        "stub_responses": str(stub_path),
+        "stub_responses_inline": {"say hi": "hello"},
     }
     status, _ = _post(f"{server}/run", json.dumps(body), headers={"X-Session-Id": "sess-xyz"})
     assert status == 200
@@ -178,3 +173,99 @@ def test_post_run_persists_row_to_store(server, tmp_path, monkeypatch):
     assert row["cases_count"] == 1
     assert row["pass"] == 1
     assert row["fail"] == 0
+
+
+def test_server_side_stub_path_is_rejected(server, tmp_path):
+    # Accepting a path let any client make the server read any JSON file it can access.
+    secret = tmp_path / "secret.json"
+    secret.write_text(json.dumps({"say hi": "hello"}))
+    body = {
+        "prompt": "{{input}}",
+        "cases": [{"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}],
+        "provider": "stub",
+        "stub_responses": str(secret),
+    }
+    status, resp = _post(f"{server}/run", json.dumps(body))
+    assert status == 400
+    assert "stub_responses_inline" in resp["error"]
+
+
+def _post_with_content_length(server: str, length: str) -> tuple[int, dict]:
+    """Send only the headers, so the server must decide from Content-Length alone."""
+    host, port = server.removeprefix("http://").split(":")
+    conn = http.client.HTTPConnection(host, int(port), timeout=5)
+    try:
+        conn.putrequest("POST", "/run")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", length)
+        conn.endheaders()
+        resp = conn.getresponse()
+        return resp.status, json.loads(resp.read())
+    finally:
+        conn.close()
+
+
+def test_oversized_body_returns_413_without_reading_it(server):
+    status, resp = _post_with_content_length(server, str(MAX_BODY_BYTES + 1))
+    assert status == 413
+    assert "too large" in resp["error"]
+
+
+@pytest.mark.parametrize("length", ["abc", "-5"])
+def test_bad_content_length_returns_400(server, length):
+    status, resp = _post_with_content_length(server, length)
+    assert status == 400
+    assert "Content-Length" in resp["error"]
+
+
+@pytest.mark.parametrize(
+    "patch, needle",
+    [
+        ({"prompt": 5}, "prompt"),
+        ({"model": 5}, "model"),
+        ({"cases": [{"input": "say hi", "assertions": []}]}, "assertions"),
+        ({"cases": [{"input": "say hi", "assertions": [{"type": "regex", "value": "("}]}]}, "invalid regex"),
+        ({"stub_responses_inline": {"say hi": 1}}, "must be a string"),
+    ],
+)
+def test_invalid_run_request_returns_400_not_500(server, patch, needle):
+    body = {
+        "prompt": "{{input}}",
+        "cases": [{"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}],
+        "provider": "stub",
+        "stub_responses_inline": {"say hi": "hello"},
+    }
+    body.update(patch)
+    status, resp = _post(f"{server}/run", json.dumps(body))
+    assert status == 400, resp
+    assert needle in resp["error"]
+
+
+def test_health_answers_while_a_slow_run_is_in_flight(server, monkeypatch):
+    # The single-threaded server blocked every request (including the Docker
+    # HEALTHCHECK) for as long as one LLM run took.
+    started, release = threading.Event(), threading.Event()
+
+    class SlowProvider:
+        def complete(self, prompt: str) -> str:
+            started.set()
+            release.wait(10)
+            return "hello"
+
+    monkeypatch.setattr(server_module, "build_provider", lambda *a, **k: SlowProvider())
+    body = {
+        "prompt": "{{input}}",
+        "cases": [{"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}],
+        "provider": "anthropic",
+    }
+    result: dict = {}
+    worker = threading.Thread(target=lambda: result.update(r=_post(f"{server}/run", json.dumps(body))))
+    worker.start()
+    try:
+        assert started.wait(5)
+        with urllib.request.urlopen(f"{server}/health", timeout=2) as resp:
+            assert resp.status == 200
+    finally:
+        release.set()
+        worker.join(10)
+    assert result["r"][0] == 200

@@ -1,23 +1,28 @@
-"""RegressGuard standalone-UI API endpoint. POST /run wraps eval_runner.cli.run_suite over HTTP; GET / serves the web UI."""
+"""RegressGuard standalone-UI API endpoint. POST /run wraps eval_runner.cli.run_suite over HTTP; GET / serves the web UI.
+
+No authentication: anyone who can reach the port can run evals with the server's API keys. Bind to localhost
+(the default) or put it behind your own auth.
+"""
 
 from __future__ import annotations
 
 import json
 import os
 import sys
-import tempfile
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from eval_runner.cli import run_suite
+from eval_runner.cli import run_suite, validate_cases
 from eval_runner.providers import build_provider
 from eval_runner.store import RunsStore
 
 
 REQUIRED_FIELDS = ("prompt", "cases", "provider")
-DEFAULT_DB_PATH = ".agent/regressguard.db"
+DEFAULT_DB_PATH = "regressguard.db"
+MAX_BODY_BYTES = 1024 * 1024
+MAX_SESSION_ID_LEN = 128
 WEBUI_PATH = Path(__file__).resolve().parent / "webui" / "index.html"
 _HTML_CACHE: str | None = None
 
@@ -54,41 +59,38 @@ def handle_run(body: dict[str, Any], session_id: str = "anonymous") -> tuple[int
     prompt = body["prompt"]
     cases = body["cases"]
     provider_name = body["provider"]
+    if not isinstance(prompt, str):
+        return HTTPStatus.BAD_REQUEST, {"error": "'prompt' must be a string"}
     if not isinstance(cases, list):
         return HTTPStatus.BAD_REQUEST, {"error": "'cases' must be a list"}
+    model = body.get("model")
+    if model is not None and not isinstance(model, str):
+        return HTTPStatus.BAD_REQUEST, {"error": "'model' must be a string"}
 
-    stub_responses_path = body.get("stub_responses")
+    # Over HTTP, stub responses are only accepted inline: a server-side path would let any
+    # client make the server open arbitrary files.
+    if body.get("stub_responses") is not None:
+        return HTTPStatus.BAD_REQUEST, {"error": "'stub_responses' (a server-side path) is not accepted over HTTP; send 'stub_responses_inline' instead"}
     stub_responses_inline = body.get("stub_responses_inline")
-    model = body.get("model", "claude-haiku-4-5-20251001")
-
-    tmp_stub: str | None = None
-    if provider_name == "stub" and not stub_responses_path and stub_responses_inline is not None:
-        if not isinstance(stub_responses_inline, dict):
-            return HTTPStatus.BAD_REQUEST, {"error": "'stub_responses_inline' must be a JSON object"}
-        fd, tmp_stub = tempfile.mkstemp(prefix="rg-stub-", suffix=".json")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(stub_responses_inline, f)
-            stub_responses_path = tmp_stub
-        except Exception:
-            if tmp_stub and os.path.exists(tmp_stub):
-                os.unlink(tmp_stub)
-            raise
+    if provider_name == "stub" and not isinstance(stub_responses_inline, dict):
+        if stub_responses_inline is None:
+            return HTTPStatus.BAD_REQUEST, {"error": "'stub_responses_inline' is required with provider 'stub'"}
+        return HTTPStatus.BAD_REQUEST, {"error": "'stub_responses_inline' must be a JSON object"}
 
     try:
-        provider = build_provider(provider_name, model, stub_responses_path)
+        provider = build_provider(provider_name, model, stub_responses_inline if provider_name == "stub" else None)
     except Exception as exc:
-        if tmp_stub and os.path.exists(tmp_stub):
-            os.unlink(tmp_stub)
         return HTTPStatus.BAD_REQUEST, {"error": f"provider init failed: {type(exc).__name__}: {exc}"}
+
+    try:
+        validate_cases(cases)
+    except ValueError as exc:
+        return HTTPStatus.BAD_REQUEST, {"error": f"invalid cases: {exc}"}
 
     try:
         report = run_suite(prompt, cases, provider)
     except Exception as exc:
         return HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"{type(exc).__name__}: {exc}"}
-    finally:
-        if tmp_stub and os.path.exists(tmp_stub):
-            os.unlink(tmp_stub)
 
     _record_best_effort(prompt, cases, report, provider_name, session_id)
     return HTTPStatus.OK, report
@@ -103,7 +105,19 @@ class EvalHandler(BaseHTTPRequestHandler):
             _write_json(self, HTTPStatus.NOT_FOUND, {"error": "unknown path"})
             return
 
-        length = int(self.headers.get("Content-Length", "0") or "0")
+        try:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+        except ValueError:
+            length = -1
+        if length < 0:
+            self.close_connection = True
+            _write_json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid Content-Length header"})
+            return
+        if length > MAX_BODY_BYTES:
+            self.close_connection = True
+            _write_json(self, HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": f"request body too large (limit {MAX_BODY_BYTES} bytes)"})
+            return
+
         raw = self.rfile.read(length) if length else b""
         try:
             body = json.loads(raw.decode("utf-8") or "{}")
@@ -115,7 +129,7 @@ class EvalHandler(BaseHTTPRequestHandler):
             _write_json(self, HTTPStatus.BAD_REQUEST, {"error": "request body must be a JSON object"})
             return
 
-        session_id = self.headers.get("X-Session-Id", "anonymous")
+        session_id = (self.headers.get("X-Session-Id") or "anonymous")[:MAX_SESSION_ID_LEN]
         status, response = handle_run(body, session_id=session_id)
         _write_json(self, status, response)
 
@@ -138,12 +152,31 @@ class EvalHandler(BaseHTTPRequestHandler):
         _write_json(self, HTTPStatus.NOT_FOUND, {"error": "unknown path"})
 
 
+def make_server(host: str = "127.0.0.1", port: int = 8787) -> ThreadingHTTPServer:
+    # Threaded so one slow LLM run does not block /health or other clients.
+    server = ThreadingHTTPServer((host, port), EvalHandler)
+    server.daemon_threads = True
+    return server
+
+
 def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
-    server = HTTPServer((host, port), EvalHandler)
-    server.serve_forever()
+    make_server(host, port).serve_forever()
+
+
+def main() -> int:
+    host = os.environ.get("REGRESSGUARD_HOST", "127.0.0.1")
+    try:
+        port = int(os.environ.get("REGRESSGUARD_PORT", "8787"))
+    except ValueError:
+        print("regressguard: error: REGRESSGUARD_PORT must be an integer", file=sys.stderr)
+        return 2
+    print(f"regressguard: serving on http://{host}:{port}", file=sys.stderr)
+    try:
+        serve(host=host, port=port)
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
 if __name__ == "__main__":
-    host = os.environ.get("REGRESSGUARD_HOST", "127.0.0.1")
-    port = int(os.environ.get("REGRESSGUARD_PORT", "8787"))
-    serve(host=host, port=port)
+    sys.exit(main())

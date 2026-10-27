@@ -52,7 +52,7 @@
       <textarea id="cases" name="cases" required placeholder='[{"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}]'>[
   {"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}
 ]</textarea>
-      <p class="hint">Array of <code>{input, assertions[]}</code>. See <code>.agent/eval-schema.md</code>.</p>
+      <p class="hint">Array of <code>{input, assertions[]}</code> (or <code>{"cases": [...]}</code>). Same format as the CLI case file.</p>
 
       <label for="provider">Provider</label>
       <select id="provider" name="provider">
@@ -62,7 +62,7 @@
       </select>
 
       <label for="model">Model (anthropic/openai)</label>
-      <input type="text" id="model" name="model" value="claude-haiku-4-5-20251001" />
+      <input type="text" id="model" name="model" value="" placeholder="claude-haiku-5-5 (anthropic default); required for openai" />
 
       <label for="stub_responses">Stub responses JSON (stub provider only)</label>
       <textarea id="stub_responses" name="stub_responses" placeholder='{"say hi": "hello"}'>{"say hi": "hello"}</textarea>
