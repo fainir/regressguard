@@ -63,3 +63,37 @@ def test_prompt_hash_is_stable_and_sensitive(db):
 def test_hash_prompt_is_sha256_hex():
     h = hash_prompt("x")
     assert re.fullmatch(r"[0-9a-f]{64}", h)
+
+
+def test_every_connection_is_closed(tmp_path, monkeypatch):
+    # `with sqlite3.connect(...)` only commits; it never closes. One connection
+    # leaked per request on the long-running server.
+    import sqlite3
+
+    from eval_runner import store as store_module
+
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def tracking_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(store_module.sqlite3, "connect", tracking_connect)
+    s = RunsStore(tmp_path / "runs.db")
+    s.record_run("p", [], REPORT_PASS, "stub", "a")
+    s.list_runs()
+    s.count()
+    assert len(opened) == 4
+    for conn in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
+
+
+def test_session_id_is_stored_verbatim_not_interpolated(db):
+    # SQL injection guard: values are bound parameters, never string-formatted.
+    evil = "x'); DROP TABLE runs; --"
+    db.record_run("p", [], REPORT_PASS, "stub", evil)
+    assert db.list_runs()[0]["session_id"] == evil
+    assert db.count() == 1

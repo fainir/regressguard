@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
-import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -38,13 +38,14 @@ class RunsStore:
         Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
+    # Callers wrap this in `closing(...)`: `with conn:` alone only commits, it never closes.
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._path)
         conn.row_factory = sqlite3.Row
         return conn
 
     def _ensure_schema(self) -> None:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             conn.executescript(SCHEMA)
 
     def record_run(
@@ -64,7 +65,7 @@ class RunsStore:
             provider,
             session_id,
         )
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             cur = conn.execute(
                 'INSERT INTO runs (ts, prompt_hash, cases_count, "pass", fail, provider, session_id) '
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -73,7 +74,7 @@ class RunsStore:
             return int(cur.lastrowid)
 
     def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             cur = conn.execute(
                 'SELECT id, ts, prompt_hash, cases_count, "pass", fail, provider, session_id '
                 "FROM runs ORDER BY id DESC LIMIT ?",
@@ -82,6 +83,6 @@ class RunsStore:
             return [dict(r) for r in cur.fetchall()]
 
     def count(self) -> int:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             (n,) = conn.execute("SELECT COUNT(*) FROM runs").fetchone()
             return int(n)
