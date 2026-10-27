@@ -22,14 +22,19 @@ def verify_signature(payload_bytes: bytes, header_value: str, secret: str) -> bo
     return False rather than raising, so callers can treat rejection as data.
 
     Comparison is constant-time via `hmac.compare_digest` to avoid timing leaks.
+    `payload_bytes` must be the raw request body exactly as received, not re-serialized JSON.
+    An empty `secret` raises ValueError: it would make every signature forgeable.
     """
+    if not secret:
+        raise ValueError("webhook secret must be a non-empty string")
     if not header_value or not isinstance(header_value, str):
         return False
     if not header_value.startswith(_SIG_PREFIX):
         return False
 
     provided_hex = header_value[len(_SIG_PREFIX):]
-    if not provided_hex:
+    if not provided_hex or not provided_hex.isascii():
+        # compare_digest raises TypeError on non-ASCII str input.
         return False
 
     expected_hex = hmac.new(

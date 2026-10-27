@@ -1,10 +1,10 @@
 """Dispatch for GitHub `pull_request` webhook events.
 
-Fixture-driven prep: this module is pure logic, does not touch the network.
-When `register-app` closes and the receiver is wired to a real endpoint, the
-receiver will call `handle_pull_request_event` with the JSON-decoded payload
-and a `hello_comment_fn` that actually POSTs to the GitHub Issues API using
-an installation token.
+Groundwork for a GitHub App: this module is pure logic and does not touch the
+network. It is not wired to an HTTP endpoint yet. A future receiver will call
+`handle_pull_request_event` with the JSON-decoded payload (after
+`webhook.verify.verify_signature` accepts the raw body) and a
+`hello_comment_fn` that POSTs to the GitHub Issues API.
 """
 
 from __future__ import annotations
@@ -38,7 +38,9 @@ def handle_pull_request_event(
     action = payload.get("action")
 
     if action == "opened":
-        pr_url = payload["pull_request"]["html_url"]
+        pr_url = (payload.get("pull_request") or {}).get("html_url")
+        if not isinstance(pr_url, str):
+            return ActionResult("ignore", "missing pull_request.html_url")
         if hello_comment_fn is not None:
             hello_comment_fn(pr_url)
         return ActionResult("post-hello", "action=opened")

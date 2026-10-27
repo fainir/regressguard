@@ -96,3 +96,31 @@ def test_action_result_is_frozen():
     result = ActionResult("post-hello", "action=opened")
     with pytest.raises(Exception):
         result.kind = "ignore"  # type: ignore[misc]
+
+
+def test_non_ascii_signature_rejected_without_raising():
+    raw, _ = _load("pr_opened.json")
+    # hmac.compare_digest raises TypeError on non-ASCII str input.
+    assert verify_signature(raw, "sha256=é" * 8, SECRET) is False
+
+
+def test_empty_secret_is_a_configuration_error():
+    raw, _ = _load("pr_opened.json")
+    # An empty secret would make every signature trivially forgeable.
+    with pytest.raises(ValueError):
+        verify_signature(raw, _sign(raw, secret=""), "")
+
+
+def test_signature_is_checked_against_raw_bytes_not_reserialized_json():
+    raw, payload = _load("pr_opened.json")
+    header = _sign(raw)
+    reserialized = json.dumps(payload).encode("utf-8")
+    assert reserialized != raw
+    assert verify_signature(reserialized, header, SECRET) is False
+
+
+def test_opened_event_without_pull_request_is_ignored():
+    spy = _HelloSpy()
+    result = handle_pull_request_event({"action": "opened"}, hello_comment_fn=spy)
+    assert result.kind == "ignore"
+    assert spy.calls == []
