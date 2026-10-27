@@ -18,7 +18,7 @@ from eval_runner.store import RunsStore
 
 REQUIRED_FIELDS = ("prompt", "cases", "provider")
 DEFAULT_DB_PATH = ".agent/regressguard.db"
-WEBUI_PATH = Path(__file__).resolve().parent.parent / "webui" / "index.html"
+WEBUI_PATH = Path(__file__).resolve().parent / "webui" / "index.html"
 _HTML_CACHE: str | None = None
 
 

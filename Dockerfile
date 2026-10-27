@@ -3,7 +3,6 @@ FROM python:3.13-slim
 WORKDIR /app
 
 COPY eval_runner/ ./eval_runner/
-COPY webui/ ./webui/
 
 RUN mkdir -p /data
 ENV REGRESSGUARD_DB=/data/regressguard.db

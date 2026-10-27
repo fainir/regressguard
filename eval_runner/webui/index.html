@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RegressGuard - eval runner</title>
+<style>
+  :root { color-scheme: light; --fg: #101828; --muted: #667085; --border: #d0d5dd; --bg: #f9fafb; --ok: #067647; --fail: #b42318; --brand: #4338ca; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--fg); background: var(--bg); }
+  header { padding: 24px 32px; border-bottom: 1px solid var(--border); background: #fff; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 32px 64px; display: grid; grid-template-columns: 1fr; gap: 24px; }
+  @media (min-width: 900px) { main { grid-template-columns: 380px 1fr; } }
+  section { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  section h2 { margin: 0 0 12px; font-size: 15px; }
+  label { display: block; font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
+  input[type=text], select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #fff; color: var(--fg); }
+  textarea { min-height: 100px; resize: vertical; }
+  button { margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 6px; background: var(--brand); color: #fff; font: 500 14px inherit; cursor: pointer; }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  .summary { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; font-weight: 500; }
+  .summary .pass { color: var(--ok); }
+  .summary .fail { color: var(--fail); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; background: var(--bg); }
+  td.status.pass { color: var(--ok); font-weight: 600; }
+  td.status.fail { color: var(--fail); font-weight: 600; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+  .error { color: var(--fail); background: #fef3f2; border: 1px solid #fda29b; padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+  .empty { color: var(--muted); padding: 20px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RegressGuard - eval runner</h1>
+  <p>Paste a prompt template, drop your cases JSON, pick a provider, ship. Every run is persisted server-side.</p>
+</header>
+<main>
+  <section>
+    <h2>Configure run</h2>
+    <form id="run-form">
+      <label for="prompt">Prompt template</label>
+      <textarea id="prompt" name="prompt" required placeholder="{{input}}">{{input}}</textarea>
+      <p class="hint">Use <code>{{input}}</code> to interpolate each case's <code>input</code>.</p>
+
+      <label for="cases">Cases JSON</label>
+      <textarea id="cases" name="cases" required placeholder='[{"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}]'>[
+  {"input": "say hi", "assertions": [{"type": "exact", "value": "hello"}]}
+]</textarea>
+      <p class="hint">Array of <code>{input, assertions[]}</code>. See <code>.agent/eval-schema.md</code>.</p>
+
+      <label for="provider">Provider</label>
+      <select id="provider" name="provider">
+        <option value="stub">stub (offline, canned)</option>
+        <option value="anthropic">anthropic</option>
+        <option value="openai">openai</option>
+      </select>
+
+      <label for="model">Model (anthropic/openai)</label>
+      <input type="text" id="model" name="model" value="claude-haiku-4-5-20251001" />
+
+      <label for="stub_responses">Stub responses JSON (stub provider only)</label>
+      <textarea id="stub_responses" name="stub_responses" placeholder='{"say hi": "hello"}'>{"say hi": "hello"}</textarea>
+
+      <button type="submit" id="run-btn">Run eval</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Results</h2>
+    <div id="error-slot"></div>
+    <div id="summary-slot" class="summary" hidden></div>
+    <div id="table-slot"><p class="empty">No runs yet. Submit the form to run an eval.</p></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  const SESSION_KEY = "regressguard-session-id";
+  function sessionId() {
+    let id = localStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
+      localStorage.setItem(SESSION_KEY, id);
+    }
+    return id;
+  }
+
+  const form = document.getElementById("run-form");
+  const btn = document.getElementById("run-btn");
+  const errorSlot = document.getElementById("error-slot");
+  const summarySlot = document.getElementById("summary-slot");
+  const tableSlot = document.getElementById("table-slot");
+
+  function showError(msg) {
+    errorSlot.innerHTML = "";
+    const div = document.createElement("div");
+    div.className = "error";
+    div.textContent = msg;
+    errorSlot.appendChild(div);
+  }
+
+  function clearError() { errorSlot.innerHTML = ""; }
+
+  function parseCases(raw) {
+    let doc;
+    try { doc = JSON.parse(raw); }
+    catch (e) { throw new Error("Cases JSON is invalid: " + e.message); }
+    if (Array.isArray(doc)) return doc;
+    if (doc && Array.isArray(doc.cases)) return doc.cases;
+    throw new Error("Cases JSON must be an array or an object with a 'cases' array.");
+  }
+
+  function renderReport(report) {
+    summarySlot.hidden = false;
+    summarySlot.innerHTML = "";
+    const passSpan = document.createElement("span");
+    passSpan.className = "pass";
+    passSpan.textContent = "Pass: " + report.pass;
+    const failSpan = document.createElement("span");
+    failSpan.className = "fail";
+    failSpan.textContent = "Fail: " + report.fail;
+    summarySlot.append(passSpan, failSpan);
+
+    const cases = report.cases || [];
+    if (!cases.length) {
+      tableSlot.innerHTML = '<p class="empty">Run returned zero cases.</p>';
+      return;
+    }
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>Status</th><th>Input</th><th>Response</th><th>Assertions</th></tr></thead><tbody></tbody>";
+    const tbody = table.querySelector("tbody");
+    for (const c of cases) {
+      const tr = document.createElement("tr");
+      const status = document.createElement("td");
+      status.className = "status " + (c.passed ? "pass" : "fail");
+      status.textContent = c.passed ? "PASS" : "FAIL";
+      const input = document.createElement("td");
+      input.innerHTML = "<pre></pre>";
+      input.querySelector("pre").textContent = c.input == null ? "" : String(c.input);
+      const resp = document.createElement("td");
+      resp.innerHTML = "<pre></pre>";
+      resp.querySelector("pre").textContent = c.error ? c.error : (c.response == null ? "" : String(c.response));
+      const asserts = document.createElement("td");
+      asserts.innerHTML = "<pre></pre>";
+      const lines = (c.assertions || []).map(a => (a.passed ? "OK  " : "FAIL") + "  " + (a.type || "?") + " " + (a.detail == null ? "" : String(a.detail)));
+      asserts.querySelector("pre").textContent = lines.join("\n");
+      tr.append(status, input, resp, asserts);
+      tbody.appendChild(tr);
+    }
+    tableSlot.innerHTML = "";
+    tableSlot.appendChild(table);
+  }
+
+  form.addEventListener("submit", async function (ev) {
+    ev.preventDefault();
+    clearError();
+    let cases;
+    try { cases = parseCases(form.elements.cases.value); }
+    catch (e) { showError(e.message); return; }
+
+    const body = {
+      prompt: form.elements.prompt.value,
+      cases: cases,
+      provider: form.elements.provider.value,
+      model: form.elements.model.value || undefined,
+    };
+
+    const stubRaw = form.elements.stub_responses.value.trim();
+    if (stubRaw) {
+      try { body.stub_responses_inline = JSON.parse(stubRaw); }
+      catch (e) { showError("Stub responses JSON is invalid: " + e.message); return; }
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Running...";
+    try {
+      const res = await fetch("/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Session-Id": sessionId() },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      let payload;
+      try { payload = JSON.parse(text); }
+      catch (e) { throw new Error("Server returned non-JSON (status " + res.status + "): " + text.slice(0, 500)); }
+      if (!res.ok) throw new Error("Server error " + res.status + ": " + (payload.error || text));
+      renderReport(payload);
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Run eval";
+    }
+  });
+})();
+</script>
+</body>
+</html>
