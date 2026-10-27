@@ -1,40 +1,42 @@
 # Changelog
 
-All notable changes to PromptForge / RegressGuard are documented in this file.
+All notable changes to RegressGuard are documented in this file.
 
 The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0-dev] - 2026-09-10
-
-Phase 2 scope decision. Path (d) `consolidate marketable surface` chosen after 50+ consecutive standups showed zero operator movement on Gates 1-4 (`.env`, `.secrets/`, GitHub App registration, hosted URL). Non-operator-gated content + SEO iteration takes priority over queue-then-stall paths.
-
-### Planned
-
-- Extract `regressguard` (eval-runner + Dockerfile + tests + examples) to standalone repo `fainir/regressguard`. See plan.md task `phase-2-scoping.extract-repo`.
-- SEO copy iteration on `fainir/promptforge-landing` for terms `LLM eval CI` and `prompt regression testing`. See plan.md task `phase-2-scoping.seo-copy-iteration`.
-- Preserve paths (a) `standalone-UI hosted URL`, (b) `github-app-skeleton reactivation`, (c) `stripe-checkout` as opportunistic pivots auto-activating on operator Gate-1 clearance.
-
-Evidence: `.agent/phase-2-scope-2026-09-09.md` (scope decision, ~110 lines).
-
-## [0.1.0] - 2026-09-09
-
-Phase 1 close at reduced scope. Three shippable items verified against live state at the `phase-1-close-checkpoint` fire.
+## [Unreleased]
 
 ### Added
 
-- Landing page (Day 23, 2026-07-04). Self-hosted / CLI framing. Live at `fainir.github.io/promptforge-landing`. Lighthouse mobile SEO score 100 (Day 26 baseline). See plan.md task `landing-page` and commit `630799b3` on `fainir/promptforge-landing` for the self-hosted framing edit (Day 85, 2026-09-09).
-- Eval-runner MVP (Day 24, 2026-07-05). CLI harness that runs prompt regression evals over a fixture set and emits JSON output. Source: `eval_runner/` in this tree. See plan.md task `eval-runner-mvp`.
-- Docker image (Day 36, 2026-07-17). Reproducible container for the eval-runner. Source: `Dockerfile` in this tree. See plan.md task `docker-image`.
-- README Quickstart (Day 85, 2026-09-09). `README.md` `## Quickstart` section covering the self-hosted CLI + Docker path. See plan.md task `phase-1-close-checkpoint.readme-quickstart` and `.agent/runs/readme-quickstart-2026-09-09.md`.
+- `pyproject.toml`, so `pip install -e .` and `pip install "git+https://github.com/fainir/regressguard"` work. Installs the `regressguard` and `regressguard-server` commands; provider SDKs are optional extras (`anthropic`, `openai`, `all`).
+- `--timeout` (default 60 seconds per provider request) and `--version`.
+- A pass/fail summary listing the failing cases on stderr. Stdout is still only the JSON report.
+- `examples/regressed-stub-responses.json`, a canned regression for trying a failing run.
+- MIT license and a CI workflow (tests on Python 3.11 to 3.13, the quick start, and the Docker image).
 
 ### Changed
 
-- Portfolio status flipped to `closed-reduced-scope` at Day 85. Evidence: `.agent/portfolio-link.json` line 11 `"phase_1_status": "closed-reduced-scope"`.
+- The case file is validated before anything runs. Configuration errors (missing or malformed case file, unknown assertion type, invalid regex, provider setup) exit `2` with a one-line message instead of a traceback with exit `1`.
+- The default Anthropic model is now `claude-haiku-5-5`. `--provider openai` requires `--model`.
+- `llm-judge` accepts `PASS` after leading blank lines, markdown or punctuation.
+- Failed `exact` and `regex` checks say what was expected and what came back.
+- Server: handles requests concurrently, caps request bodies at 1 MB, and stores run history in `./regressguard.db` by default (was `.agent/regressguard.db`). Over HTTP the stub provider only accepts `stub_responses_inline`; the `stub_responses` file path is rejected.
+- The Docker image installs the package with both provider SDKs, and its health check follows `REGRESSGUARD_PORT`.
 
-### Deferred
+### Fixed
 
-- Standalone-UI hosted URL (blocked on operator `flyctl auth login` or equivalent host token).
-- GitHub App skeleton (blocked on operator registration + `.env` + `.secrets/`).
-- Stripe checkout (transitive on standalone-UI).
+- A case with no `assertions` (for example a typo like `assertion`) passed without checking anything.
+- An `llm-judge` call that raised aborted the whole run instead of failing only that case.
+- `--provider openai` without `--model` sent the Claude default model id to OpenAI.
+- The web UI and webhook modules were missing from the repository: `GET /` returned 500 and `docker build` failed.
+- The SQLite store never closed its connections.
+- Webhook signature verification raised on non-ASCII signature headers and accepted an empty secret.
 
-Evidence pointers: `.agent/plan.md` (progress line 39/42 92% at Day 87 close), `.agent/retros/retro-2026-09-11.md`, `.agent/phase-2-scope-2026-09-09.md`.
+## [0.1.0] - 2026-09-09
+
+### Added
+
+- Eval runner CLI: renders a prompt template for each case in a JSON case file, calls the provider, applies `exact`, `contains`, `regex` and `llm-judge` assertions, writes a JSON report, and exits non-zero when any case fails.
+- Providers: Anthropic, OpenAI, and an offline `stub` provider with canned responses.
+- HTTP server with a web UI, `POST /run`, `GET /health`, and SQLite run history.
+- Docker image.

@@ -1,6 +1,6 @@
 {
   "version": "0",
-  "description": "Example RegressGuard eval cases covering all 4 assertion types. Schema: .agent/eval-schema.md",
+  "description": "Example RegressGuard eval cases covering all 4 assertion types. Format: README.md#case-file-format",
   "cases": [
     {
       "input": "Return only the string 'ok' with no punctuation or whitespace.",

@@ -1,6 +1,6 @@
 {
   "version": "0",
-  "description": "Minimal RegressGuard Quickstart case set. One case per assertion type (exact, contains, regex). Runs against the bundled `stub` provider so no API key is required. Full schema: .agent/eval-schema.md",
+  "description": "Minimal RegressGuard Quickstart case set. One case per assertion type (exact, contains, regex). Runs against the bundled `stub` provider so no API key is required. Format: README.md#case-file-format",
   "cases": [
     {
       "input": "Return only the string 'ok' with no punctuation or whitespace.",
