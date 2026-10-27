@@ -2,7 +2,7 @@
 
 import pytest
 
-from eval_runner.assertions import AssertionResult, run_assertion
+from eval_runner.assertions import AssertionResult, run_assertion, validate_assertion
 
 
 class TestExact:
@@ -97,3 +97,44 @@ def test_assertion_result_is_frozen():
     result = AssertionResult(True, "ok")
     with pytest.raises(Exception):
         result.passed = False  # type: ignore[misc]
+
+
+def _judge(output: str):
+    return run_assertion(
+        {"type": "llm-judge", "value": "tag", "judge_prompt": "Grade: {{response}}"},
+        "resp",
+        judge_fn=lambda _p: output,
+    )
+
+
+@pytest.mark.parametrize(
+    "output",
+    ["PASS", "PASS\nreason", "\n\nPASS\nreason", "  pass  ", "**PASS**\nreason", "PASS: looks right", "Pass."],
+)
+def test_llm_judge_tolerates_formatting_around_pass(output):
+    assert _judge(output).passed is True
+
+
+@pytest.mark.parametrize("output", ["", "\n\n", "FAIL\nPASS", "PASSABLE", "I would say PASS", "fail."])
+def test_llm_judge_fails_on_anything_but_a_leading_pass(output):
+    assert _judge(output).passed is False
+
+
+class TestValidation:
+    def test_invalid_regex_raises_value_error(self):
+        with pytest.raises(ValueError, match="invalid regex"):
+            run_assertion({"type": "regex", "value": "("}, "anything")
+
+    def test_missing_value_raises(self):
+        with pytest.raises(ValueError, match="value"):
+            run_assertion({"type": "contains"}, "anything")
+
+    def test_non_dict_assertion_raises(self):
+        with pytest.raises(ValueError):
+            run_assertion("exact", "anything")  # type: ignore[arg-type]
+
+    def test_validate_assertion_accepts_every_documented_type(self):
+        validate_assertion({"type": "exact", "value": "a"})
+        validate_assertion({"type": "contains", "value": "a"})
+        validate_assertion({"type": "regex", "value": "a+"})
+        validate_assertion({"type": "llm-judge", "value": "a", "judge_prompt": "{{response}}"})

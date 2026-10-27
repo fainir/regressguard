@@ -56,3 +56,32 @@ def test_run_suite_mixed_ok_and_error():
     assert report["cases"][1]["passed"] is False
     assert report["cases"][1]["error"] == "TimeoutError: upstream"
     assert report["cases"][2]["passed"] is True
+
+
+class _JudgeRaisingProvider:
+    """Answers the case prompt but raises when called again as the llm-judge."""
+
+    def complete(self, prompt: str) -> str:
+        if prompt.startswith("Grade:"):
+            raise TimeoutError("judge timed out")
+        return "answer"
+
+
+def test_judge_error_is_isolated_to_its_case():
+    cases = [
+        {
+            "input": "a",
+            "assertions": [
+                {"type": "contains", "value": "answer"},
+                {"type": "llm-judge", "value": "q", "judge_prompt": "Grade: {{response}}"},
+            ],
+        },
+        {"input": "b", "assertions": [{"type": "exact", "value": "answer"}]},
+    ]
+    report = run_suite("{{input}}", cases, _JudgeRaisingProvider())
+    assert (report["pass"], report["fail"]) == (1, 1)
+    errored = report["cases"][0]
+    assert errored["passed"] is False
+    assert errored["error"] == "TimeoutError: judge timed out"
+    assert errored["response"] == "answer"
+    assert report["cases"][1]["passed"] is True
